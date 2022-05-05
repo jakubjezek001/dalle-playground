@@ -91,33 +91,35 @@ def tokenize_prompt(prompt: str):
   return replicate(tokenized_prompt)
 
 def generate_images(prompt:str, num_predictions: int):
-  tokenized_prompt = tokenize_prompt(prompt)
-  
-  # create a random key
-  seed = random.randint(0, 2**32 - 1)
-  key = jax.random.PRNGKey(seed)
+    tokenized_prompt = tokenize_prompt(prompt)
 
-  # generate images
-  images = []
-  for i in trange(num_predictions // jax.device_count()):
-      # get a new key
-      key, subkey = jax.random.split(key)
-      
-      # generate images
-      encoded_images = p_generate(tokenized_prompt, shard_prng_key(subkey),
-          model.params,gen_top_k, gen_top_p, temperature, cond_scale,
-      )
-      
-      # remove BOS
-      encoded_images = encoded_images.sequences[..., 1:]
+    # create a random key
+    seed = random.randint(0, 2**32 - 1)
+    key = jax.random.PRNGKey(seed)
 
-      # decode images
-      decoded_images = p_decode(encoded_images, vqgan.params)
-      decoded_images = decoded_images.clip(0.0, 1.0).reshape((-1, 256, 256, 3))
-      for img in decoded_images:
-          images.append(Image.fromarray(np.asarray(img * 255, dtype=np.uint8)))
-        
-  return images
+    # generate images
+    images = []
+    for _ in trange(num_predictions // jax.device_count()):
+        # get a new key
+        key, subkey = jax.random.split(key)
+
+        # generate images
+        encoded_images = p_generate(tokenized_prompt, shard_prng_key(subkey),
+            model.params,gen_top_k, gen_top_p, temperature, cond_scale,
+        )
+
+        # remove BOS
+        encoded_images = encoded_images.sequences[..., 1:]
+
+        # decode images
+        decoded_images = p_decode(encoded_images, vqgan.params)
+        decoded_images = decoded_images.clip(0.0, 1.0).reshape((-1, 256, 256, 3))
+        images.extend(
+            Image.fromarray(np.asarray(img * 255, dtype=np.uint8))
+            for img in decoded_images
+        )
+
+    return images
 
 @app.route('/dalle', methods=['POST'])
 @cross_origin()
